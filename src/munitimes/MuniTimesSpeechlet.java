@@ -1,3 +1,5 @@
+package munitimes;
+
 import com.amazon.speech.json.SpeechletRequestEnvelope;
 import com.amazon.speech.slu.Intent;
 import com.amazon.speech.speechlet.*;
@@ -6,6 +8,7 @@ import com.amazon.speech.ui.PlainTextOutputSpeech;
 import com.amazon.speech.ui.Reprompt;
 import com.amazon.speech.ui.SimpleCard;
 import com.amazon.speech.ui.SsmlOutputSpeech;
+import org.apache.log4j.BasicConfigurator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
@@ -15,13 +18,32 @@ import org.xml.sax.SAXException;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.URL;
+import java.util.Properties;
 
 public class MuniTimesSpeechlet implements SpeechletV2 {
 
     private static final Logger log = LoggerFactory.getLogger(MuniTimesSpeechlet.class);
-    private final static String STOP_URL = "NEXT BUS PREDICTIONS URL GOES HERE";
+
+    private Properties properties;
+
+
+    public MuniTimesSpeechlet() {
+        BasicConfigurator.configure();
+        log.info("Starting app!");
+        loadProperties();
+    }
+
+    private void loadProperties() {
+        properties = new Properties();
+        try {
+            properties.load(new FileInputStream("munitimes.properties"));
+        } catch (IOException e) {
+            log.error("Error loading properties file", e);
+        }
+    }
 
     @Override
     public void onSessionStarted(SpeechletRequestEnvelope<SessionStartedRequest> requestEnvelope) {
@@ -77,9 +99,10 @@ public class MuniTimesSpeechlet implements SpeechletV2 {
     }
 
     private String getTimePhrase(int predictionNum) throws ParserConfigurationException, IOException, SAXException {
+        String stopUrlFromConf = properties.getProperty("stop.url");
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
         DocumentBuilder db = dbf.newDocumentBuilder();
-        Document doc = db.parse(new URL(STOP_URL).openStream());
+        Document doc = db.parse(new URL(stopUrlFromConf).openStream());
 
 
         Node firstPrediction = doc.getDocumentElement().getChildNodes().item(1).getChildNodes().item(1).getChildNodes()

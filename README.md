@@ -7,8 +7,8 @@ closely based off the sample HelloWorld skill provided by Amazon.
 
 ### Usage
 
-The skill currently uses a single hardcoded MUNI stop. To set the stop, change the field `STOP_URL` in the
-`MuniTimesSpeechlet` class. This skill uses the [Next Bus API](https://www.nextbus.com/xmlFeedDocs/NextBusXMLFeed
+The skill currently uses a single hardcoded MUNI stop. To set the stop, change the field `stop.url` in the
+properties file. This skill uses the [Next Bus API](https://www.nextbus.com/xmlFeedDocs/NextBusXMLFeed
 .pdf), so check that out to get the correct format for the prediction URL.
 
 - Get the bus time:
