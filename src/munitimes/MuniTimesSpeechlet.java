@@ -2,6 +2,7 @@ package munitimes;
 
 import com.amazon.speech.json.SpeechletRequestEnvelope;
 import com.amazon.speech.slu.Intent;
+import com.amazon.speech.slu.Slot;
 import com.amazon.speech.speechlet.*;
 import com.amazon.speech.ui.OutputSpeech;
 import com.amazon.speech.ui.PlainTextOutputSpeech;
@@ -21,14 +22,16 @@ import javax.xml.parsers.ParserConfigurationException;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.URL;
+import java.util.NoSuchElementException;
 import java.util.Properties;
 
 public class MuniTimesSpeechlet implements SpeechletV2 {
 
     private static final Logger log = LoggerFactory.getLogger(MuniTimesSpeechlet.class);
+    private static final String URL_FORMAT = "http://webservices.nextbus" +
+            ".com/service/publicXMLFeed?command=predictions&a=sf-muni&stopId=%d";
 
     private Properties properties;
-
 
     public MuniTimesSpeechlet() {
         BasicConfigurator.configure();
@@ -61,6 +64,7 @@ public class MuniTimesSpeechlet implements SpeechletV2 {
     @Override
     public SpeechletResponse onIntent(SpeechletRequestEnvelope<IntentRequest> requestEnvelope) {
         IntentRequest request = requestEnvelope.getRequest();
+        Session session = requestEnvelope.getSession();
         log.info("onIntent requestId={}, sessionId={}", request.getRequestId(),
                 requestEnvelope.getSession().getSessionId());
 
@@ -68,11 +72,24 @@ public class MuniTimesSpeechlet implements SpeechletV2 {
         String intentName = (intent != null) ? intent.getName() : null;
 
         if ("BusTime".equals(intentName)) {
+            log.info("Received intent: BusTime");
             return getBusTimeResponse();
-        } else {
-            return getAskResponse("MUNI Times", "This is unsupported.  Please try something else.");
         }
+
+        if ("SetFavoriteRoute".equals(intentName)) {
+            log.info("Received intent: SetFavoriteRoute");
+            return getSetFavoriteRouteResponse(intent, session);
+        }
+
+
+        if ("BusTimeForStop".equals(intentName)) {
+            log.info("Received intent: BusTimeForStop");
+            return getBusTimeForStopResponse(intent, session);
+        }
+
+        return getAskResponse("MUNI Times", "This is unsupported.  Please try something else.");
     }
+
 
     @Override
     public void onSessionEnded(SpeechletRequestEnvelope<SessionEndedRequest> requestEnvelope) {
@@ -86,24 +103,62 @@ public class MuniTimesSpeechlet implements SpeechletV2 {
     }
 
     private SpeechletResponse getBusTimeResponse() {
+        int stopId = Integer.parseInt(properties.getProperty("stopId.default"));
+        String speechText;
         try {
-            String speechText = "The bus is arriving in " + getTimePhrase(1);
-            speechText = speechText + "The next bus is in " + getTimePhrase(3);
-            SimpleCard card = getSimpleCard("Bus time", speechText);
-            SsmlOutputSpeech speech = getSSMLOutputSpeech(speechText);
-            return SpeechletResponse.newTellResponse(speech, card);
+            speechText = "The bus is arriving in " + getTimePhrase(1, stopId);
+            speechText = speechText + "The next bus is in " + getTimePhrase(3, stopId);
         } catch (Exception e) {
-
+            speechText = "Sorry, I had a problem getting the bus time.";
         }
-        return null;
+        SimpleCard card = getSimpleCard("Bus time", speechText);
+        SsmlOutputSpeech speech = getSSMLOutputSpeech(speechText);
+        return SpeechletResponse.newTellResponse(speech, card);
     }
 
-    private String getTimePhrase(int predictionNum) throws ParserConfigurationException, IOException, SAXException {
-        String stopUrlFromConf = properties.getProperty("stop.url");
+    private SpeechletResponse getSetFavoriteRouteResponse(Intent intent, Session session) {
+        Slot routeSlot = intent.getSlot("route");
+        String routeName = routeSlot.getValue();
+        PlainTextOutputSpeech speech = getPlainTextOutputSpeech("Your favorite route is " + routeName);
+        return SpeechletResponse.newTellResponse(speech);
+    }
+
+    private SpeechletResponse getBusTimeForStopResponse(Intent intent, Session session) {
+        String route = intent.getSlot("route").getValue();
+        String streetA = intent.getSlot("streetA").getValue();
+        String streetB = intent.getSlot("streetB").getValue();
+
+        log.info(String.format("Querying next %s bus at %s and %s", route, streetA, streetB));
+
+        DynamoReader reader = new DynamoReader();
+        int stopId = 0;
+
+        SsmlOutputSpeech speech;
+        try {
+            stopId = reader.getStopId(route, streetA, streetB);
+        } catch (NoSuchElementException e) {
+            return SpeechletResponse.newTellResponse(getSSMLOutputSpeech("Sorry, I can't find that stop"));
+        }
+
+        try {
+            speech = getSSMLOutputSpeech(String.format("The %s bus at %s and %s is coming " +
+                    "in %s", route, streetA, streetB, getTimePhrase(1, stopId)));
+        } catch (Exception e) {
+            speech = getSSMLOutputSpeech("Sorry, I couldn't find the bus time.");
+        }
+        return SpeechletResponse.newTellResponse(speech);
+    }
+
+
+    private String getTimePhrase(int predictionNum, int stopId) throws ParserConfigurationException, IOException,
+            SAXException {
+
+        log.info("getting time phrase");
+
+        String stopUrl = String.format(URL_FORMAT, stopId);
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
         DocumentBuilder db = dbf.newDocumentBuilder();
-        Document doc = db.parse(new URL(stopUrlFromConf).openStream());
-
+        Document doc = db.parse(new URL(stopUrl).openStream());
 
         Node firstPrediction = doc.getDocumentElement().getChildNodes().item(1).getChildNodes().item(1).getChildNodes()
                 .item(predictionNum);
